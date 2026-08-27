@@ -14,6 +14,19 @@ Code execution made simple for every business.
 
 Robust, fast, scalable, and sandboxed open-source online code execution system for humans and AI.
 
+### Docker Publish
+-  Clone Repo
+```git clone https://github.com/aamitn/judge0-custom.git```
+-  Navigate to the custom repo location
+```cd judge0-custom```
+-  Build the image (using --no-cache is optional, but guarantees a clean build)
+```docker build -t bitmutex/judge0-custom:latest .```
+-  Log into DockerHub (if not already authenticated)
+```docker login```
+-  Push the image to your registry
+```docker push bitmutex/judge0-custom:latest```
+
+
 ## Table of Contents
 
 * [About](#about)

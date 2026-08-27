@@ -55,6 +55,7 @@ COPY cron /etc/cron.d
 RUN cat /etc/cron.d/* | crontab -
 
 COPY . .
+RUN apt-get update && apt-get install -y dos2unix && dos2unix /api/docker-entrypoint.sh /api/config.ru && find /api/scripts /api/bin -type f -exec dos2unix {} +
 
 ENTRYPOINT ["/api/docker-entrypoint.sh"]
 CMD ["/api/scripts/server"]
@@ -63,12 +64,9 @@ RUN useradd -u 1000 -m -r judge0 && \
     echo "judge0 ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers && \
     chown judge0: /api/tmp/
 
+RUN apt-get update && apt-get install -y python3-numpy python3-pandas python3-scipy python3-sklearn && rm -rf /var/lib/apt/lists/*
+
 USER judge0
 
 ENV JUDGE0_VERSION "1.13.1"
 LABEL version=$JUDGE0_VERSION
-
-
-FROM production AS development
-
-CMD ["sleep", "infinity"]
