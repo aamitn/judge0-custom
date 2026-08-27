@@ -12,6 +12,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
 
     steps:
       - name: Checkout repository
@@ -57,3 +59,153 @@ jobs:
           cache-to: type=gha,mode=max
           build-args: |
             ISOLATE_VERSION=2.2.1
+
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "Judge0 Custom ${{ github.ref_name }}"
+          generate_release_notes: true
+          body: |
+            ## 🐳 Docker Image
+
+            ```
+            bitmutex/judge0-custom:${{ needs.build-and-push.outputs.version }}
+            bitmutex/judge0-custom:latest
+            ```
+
+            ---
+
+            ## ⚠️ Platform Requirement
+
+            > **This image only runs on Linux or WSL2.** It depends on `cgroups` (v1/v2) and the `isolate` sandboxing engine — Linux kernel features not available on native Windows or macOS.
+
+            ---
+
+            ## 🚀 Quick Start (Standalone)
+
+            ### 1. Download the compose file and config
+
+            ```bash
+            wget https://raw.githubusercontent.com/aamitn/judge0-custom/${{ github.ref_name }}/docker-compose.yml
+            wget https://raw.githubusercontent.com/aamitn/judge0-custom/${{ github.ref_name }}/judge0.conf
+            ```
+
+            ### 2. Review and edit `judge0.conf`
+
+            At minimum, set strong passwords for Redis and Postgres:
+
+            ```ini
+            REDIS_PASSWORD=your_redis_password
+            POSTGRES_PASSWORD=your_postgres_password
+            ```
+
+            ### 3. Start the stack
+
+            ```bash
+            docker compose up -d
+            ```
+
+            ### 4. Wait ~30 seconds, then verify
+
+            ```bash
+            curl http://localhost:2358/system_info
+            ```
+
+            You should receive a JSON response with system details.
+
+            ---
+
+            ## 🧩 Embedding in an existing `docker-compose.yml`
+
+            Add the following services to your existing compose file:
+
+            ```yaml
+            services:
+              judge0-server:
+                image: bitmutex/judge0-custom:${{ needs.build-and-push.outputs.version }}
+                volumes:
+                  - ./judge0.conf:/judge0.conf:ro
+                  - /sys/fs/cgroup:/sys/fs/cgroup:rw
+                ports:
+                  - "2358:2358"
+                privileged: true
+                command: [ "./scripts/server" ]
+                restart: always
+                depends_on:
+                  db:
+                    condition: service_healthy
+                  redis:
+                    condition: service_healthy
+
+              judge0-workers:
+                image: bitmutex/judge0-custom:${{ needs.build-and-push.outputs.version }}
+                privileged: true
+                command: [ "./scripts/workers" ]
+                volumes:
+                  - ./judge0.conf:/judge0.conf:ro
+                  - /sys/fs/cgroup:/sys/fs/cgroup:rw
+                restart: always
+                depends_on:
+                  db:
+                    condition: service_healthy
+                  redis:
+                    condition: service_healthy
+
+              db:
+                image: postgres:16.2
+                env_file: ./judge0.conf
+                volumes:
+                  - judge0-data:/var/lib/postgresql/data/
+                restart: always
+                healthcheck:
+                  test: [ "CMD-SHELL", "pg_isready -U judge0 -d judge0" ]
+                  interval: 10s
+                  timeout: 5s
+                  retries: 10
+
+              redis:
+                image: redis:7.2.4
+                command: [ "bash", "-c", 'docker-entrypoint.sh --appendonly no --requirepass "$$REDIS_PASSWORD"' ]
+                env_file: ./judge0.conf
+                restart: always
+                healthcheck:
+                  test: [ "CMD", "redis-cli", "-a", "$$REDIS_PASSWORD", "ping" ]
+                  interval: 10s
+                  timeout: 5s
+                  retries: 10
+
+            volumes:
+              judge0-data:
+            ```
+
+            ---
+
+            ## 🔧 Customizations in this image
+
+            | Feature | Details |
+            |---|---|
+            | **cgroups v2 support** | Patched `isolate` v2.2.1 to work with modern Linux distributions using cgroups v2 |
+            | **Python Data Science libs** | Pre-installed `numpy`, `pandas`, `scipy`, `scikit-learn` via Debian packages |
+            | **Windows CRLF fix** | `dos2unix` applied to all scripts at build time — safe to build on Windows/WSL |
+
+            ---
+
+            ## 📦 Ports
+
+            | Port | Service |
+            |---|---|
+            | `2358` | Judge0 API Server |
+            | `5432` | PostgreSQL (internal) |
+            | `6379` | Redis (internal) |

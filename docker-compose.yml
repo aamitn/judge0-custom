@@ -1,5 +1,4 @@
-x-logging:
-  &default-logging
+x-logging: &default-logging
   logging:
     driver: json-file
     options:
@@ -7,23 +6,36 @@ x-logging:
 
 services:
   server:
-    image: judge0/judge0:cgv2
+    image: bitmutex/judge0-custom:latest
     volumes:
       - ./judge0.conf:/judge0.conf:ro
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
     ports:
       - "2358:2358"
     privileged: true
+    command: [ "./scripts/server" ]
     <<: *default-logging
     restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
-  worker:
-    image: judge0/judge0:cgv2
-    command: ["./scripts/workers"]
+  workers:
+    image: bitmutex/judge0-custom:latest
+    privileged: true
+    command: [ "./scripts/workers" ]
     volumes:
       - ./judge0.conf:/judge0.conf:ro
-    privileged: true
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
     <<: *default-logging
     restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   db:
     image: postgres:16.2
@@ -32,16 +44,23 @@ services:
       - data:/var/lib/postgresql/data/
     <<: *default-logging
     restart: always
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U judge0 -d judge0" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
   redis:
     image: redis:7.2.4
-    command: [
-      "bash", "-c",
-      'docker-entrypoint.sh --appendonly no --requirepass "$$REDIS_PASSWORD"'
-    ]
+    command: [ "bash", "-c", 'docker-entrypoint.sh --appendonly no --requirepass "$$REDIS_PASSWORD"' ]
     env_file: judge0.conf
     <<: *default-logging
     restart: always
+    healthcheck:
+      test: [ "CMD", "redis-cli", "-a", "$$REDIS_PASSWORD", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
 volumes:
   data:
