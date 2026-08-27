@@ -14,17 +14,179 @@ Code execution made simple for every business.
 
 Robust, fast, scalable, and sandboxed open-source online code execution system for humans and AI.
 
-### Docker Publish
--  Clone Repo
-```git clone https://github.com/aamitn/judge0-custom.git```
--  Navigate to the custom repo location
-```cd judge0-custom```
--  Build the image (using --no-cache is optional, but guarantees a clean build)
-```docker build -t bitmutex/judge0-custom:latest .```
--  Log into DockerHub (if not already authenticated)
-```docker login```
--  Push the image to your registry
-```docker push bitmutex/judge0-custom:latest```
+---
+
+## 🛠️ judge0-custom — Fork Overview
+
+This is a custom fork of [Judge0 v1.13.1](https://github.com/judge0/judge0) with targeted modifications to support modern Linux environments and Data Science workloads. It is published to DockerHub as [`bitmutex/judge0-custom`](https://hub.docker.com/r/bitmutex/judge0-custom).
+
+### Modifications Made
+
+| # | Modification | File(s) Changed | Details |
+|---|---|---|---|
+| 1 | **cgroups v2 Support** | `Dockerfile`, `patches/isolate-cgroup-v2.patch` | Patches `isolate` v2.2.1 at build time to support cgroups v2, which is the default on modern Linux distros (Ubuntu 22.04+, Debian 12, Fedora). Without this, `isolate` fails to sandbox submissions. |
+| 2 | **Python Data Science Libraries** | `Dockerfile` | Pre-installs `python3-numpy`, `python3-pandas`, `python3-scipy`, `python3-sklearn` via Debian packages during image build — avoids Cython compilation failures on Python 3.7. |
+| 3 | **Windows CRLF Fix** | `Dockerfile` | Runs `dos2unix` on `docker-entrypoint.sh`, `config.ru`, and all files in `/api/scripts` and `/api/bin`. When the repo is cloned on Windows, Git converts line endings to `\r\n` (CRLF), causing Ruby to crash with `shebang line ending with \r may cause problems`. |
+| 4 | **Default CMD Fix** | `Dockerfile` | The original upstream Dockerfile had a `development` stage at the very end that overrode `CMD` to `sleep infinity`. This caused the server container to silently do nothing when run without an explicit command. The `development` stage has been removed so `CMD ["/api/scripts/server"]` in the `production` stage applies correctly. |
+| 5 | **Server Startup Command** | `docker-compose.yml` | Added explicit `command: ["./scripts/server"]` to the `server` service. Without this, Docker falls back to the image's default `CMD`, which was `sleep infinity` in earlier builds. |
+| 6 | **Startup Ordering (depends_on + healthchecks)** | `docker-compose.yml` | Added `healthcheck` to `db` (via `pg_isready`) and `redis` (via `redis-cli ping`), and `depends_on` with `condition: service_healthy` to `server` and `workers`. This prevents Rails from crashing on startup trying to connect to Postgres/Redis before they are ready. |
+| 7 | **Service Hostname Alignment** | `docker-compose.yml`, `judge0.conf` | Service names in `docker-compose.yml` are `db` and `redis`, matching the `POSTGRES_HOST` and `REDIS_HOST` defaults in `judge0.conf`. This is required for container DNS resolution inside the Docker network. |
+
+---
+
+## ⚠️ Platform Requirement: Linux or WSL Only
+
+> **This image can only be run on Linux or WSL2 (Windows Subsystem for Linux).** It depends on `cgroups` (v1/v2) and the `isolate` sandboxing engine — Linux kernel features unavailable on native Windows or macOS Docker Desktop.
+>
+> **Recommended environments:**
+> - Linux host (Ubuntu 20.04+ or Debian 11+ recommended)
+> - WSL2 on Windows (Ubuntu distro) — run all `docker compose` commands from inside the WSL2 terminal
+
+---
+
+## 🚀 Running Locally
+
+### 1. Clone the repo
+
+```bash
+git clone https://github.com/aamitn/judge0-custom.git
+cd judge0-custom
+```
+
+### 2. Edit `judge0.conf`
+
+Set strong passwords at minimum:
+
+```ini
+REDIS_PASSWORD=your_redis_password
+POSTGRES_PASSWORD=your_postgres_password
+```
+
+### 3. Start the stack
+
+```bash
+docker compose up -d
+```
+
+### 4. Verify (after ~30 seconds)
+
+```bash
+curl http://localhost:2358/system_info
+```
+
+You should receive a JSON response with CPU and memory details.
+
+---
+
+## 🐳 DockerHub Image
+
+```
+bitmutex/judge0-custom:latest
+```
+
+### Manual Build & Push
+
+```bash
+# Clone repo
+git clone https://github.com/aamitn/judge0-custom.git
+cd judge0-custom
+
+# Build (--no-cache optional, guarantees clean build)
+docker build -t bitmutex/judge0-custom:latest .
+
+# Login to DockerHub
+docker login
+
+# Push
+docker push bitmutex/judge0-custom:latest
+```
+
+### CI/CD — Automated via GitHub Actions
+
+Pushing a version tag triggers an automated build and push to DockerHub, plus a GitHub Release with full usage instructions:
+
+```bash
+git tag v1.13.2
+git push origin v1.13.2
+```
+
+**Required repository secrets** (`Settings → Secrets → Actions`):
+
+| Secret | Value |
+|---|---|
+| `DOCKERHUB_USERNAME` | Your DockerHub username |
+| `DOCKERHUB_TOKEN` | DockerHub access token (not password) |
+
+The workflow (`.github/workflows/docker-publish.yml`) will:
+1. Build and push `bitmutex/judge0-custom:latest` and `bitmutex/judge0-custom:{version}` to DockerHub
+2. Create a GitHub Release with auto-generated changelog and full deployment instructions
+
+---
+
+## 🧩 Embedding in an existing `docker-compose.yml`
+
+```yaml
+services:
+  judge0-server:
+    image: bitmutex/judge0-custom:latest
+    volumes:
+      - ./judge0.conf:/judge0.conf:ro
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    ports:
+      - "2358:2358"
+    privileged: true
+    command: [ "./scripts/server" ]
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  judge0-workers:
+    image: bitmutex/judge0-custom:latest
+    privileged: true
+    command: [ "./scripts/workers" ]
+    volumes:
+      - ./judge0.conf:/judge0.conf:ro
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  db:
+    image: postgres:16.2
+    env_file: ./judge0.conf
+    volumes:
+      - judge0-data:/var/lib/postgresql/data/
+    restart: always
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U judge0 -d judge0" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7.2.4
+    command: [ "bash", "-c", 'docker-entrypoint.sh --appendonly no --requirepass "$$REDIS_PASSWORD"' ]
+    env_file: ./judge0.conf
+    restart: always
+    healthcheck:
+      test: [ "CMD", "redis-cli", "-a", "$$REDIS_PASSWORD", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  judge0-data:
+```
+
+---
+
+### Docker Publish (legacy manual instructions)
 
 
 ## Table of Contents
