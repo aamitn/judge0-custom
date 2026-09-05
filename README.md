@@ -18,7 +18,7 @@ Robust, fast, scalable, and sandboxed open-source online code execution system f
 
 ## 🛠️ judge0-custom — Fork Overview
 
-This is a custom fork of [Judge0 v1.13.1](https://github.com/judge0/judge0) forked from the[mrkushalam/Judge0](https://github.com/mrkushalam/judge0) with targeted modifications to support modern Linux environments and Data Science workloads. It is published to DockerHub as [`bitmutex/judge0-custom`](https://hub.docker.com/r/bitmutex/judge0-custom).
+This is a custom fork of [Judge0 v1.13.1](https://github.com/judge0/judge0) forked from the [mrkushalam/Judge0](https://github.com/mrkushalsm/judge0) with targeted modifications to support modern Linux environments and Data Science workloads. It is published to DockerHub as [`bitmutex/judge0-custom`](https://hub.docker.com/r/bitmutex/judge0-custom).
 
 ### Modifications Made
 
