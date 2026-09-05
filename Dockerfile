@@ -68,5 +68,9 @@ RUN apt-get update && apt-get install -y python3-numpy python3-pandas python3-sc
 
 USER judge0
 
+FROM production AS development
+
+CMD ["sleep", "infinity"]
+
 ENV JUDGE0_VERSION "1.13.1"
 LABEL version=$JUDGE0_VERSION
